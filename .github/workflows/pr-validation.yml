@@ -1,0 +1,103 @@
+name: PR Validation (MUSA GPU)
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [ opened, synchronize, reopened ]
+ 
+permissions:
+  contents: read
+  pull-requests: write
+ 
+jobs:
+  validate:
+    runs-on: [self-hosted, musa-gpu]
+     
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+ 
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libgl1 libglib2.0-0  # TensorFlow 依赖
+ 
+      - name: Install MUSA-aware TensorFlow
+        run: |
+          pip install --upgrade pip
+          pip install tensorflow==2.4.0  # 或你的定制版本
+          pip install -e .  # 安装当前 repo（含 MUSA 扩展）
+ 
+      - name: Verify MUSA device availability
+        run: |
+          python3 -c "
+            import tensorflow as tf
+            print('TensorFlow version:', tf.__version__)
+            devices = tf.config.list_physical_devices()
+            print('Available devices:', devices)
+            musa_devices = [d for d in devices if 'MUSA' in d.name or 'GPU' in d.name]
+            assert len(musa_devices) > 0, '❌ No MUSA device found!'
+            print('✅ MUSA device detected:', musa_devices[0])
+            "
+ 
+      - name: Run unit tests
+        id: run-tests
+        run: |
+          python -m pytest tests/unit/ -v --tb=short || echo "status=failure" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+        continue-on-error: true  # 即使失败也继续执行后续步骤（用于发通知）
+ 
+      - name: Run integration tests (MUSA operators)
+        id: run-integration
+        if: steps.run-tests.outputs.status == 'success'
+        run: |
+          python -m pytest tests/integration/ -v --tb=short || echo "status=failure" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+        continue-on-error: true
+ 
+      - name: Comment PR with result (success)
+        if: steps.run-integration.outputs.status == 'success'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner,
+              repo,
+              body: `✅ **CI Passed**\n\n- MUSA device: detected\n- Unit tests: passed\n- Integration tests: passed\n\n[View logs](${process.env.GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${context.runId})`
+            });
+            // 可选：自动添加标签
+            await github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner,
+              repo,
+              labels: ['ci-passed']
+            });
+ 
+      - name: Comment PR with result (failure)
+        if: steps.run-integration.outputs.status == 'failure' || steps.run-tests.outputs.status == 'failure'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner,
+              repo,
+              body: `❌ **CI Failed**\n\nPlease check:\n1. MUSA device availability\n2. Operator compatibility\n3. Test logs below\n\n[View logs](${process.env.GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${context.runId})`
+            });
+            // 可选：自动添加标签
+            await github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner,
+              repo,
+              labels: ['ci-failed']
+            });
