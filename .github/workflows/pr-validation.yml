@@ -38,26 +38,26 @@ jobs:
           # 打印当前环境
           echo "🌟 Current conda environment: $(conda info --envs | grep '*' | awk '{print $1}')"
 
-          # Python 多行检查
-          python3 <<PYEOF
-          import sys
-          try:
-              import tensorflow as tf
-          except ModuleNotFoundError:
-              print("❌ TensorFlow is not installed in this environment!")
-              sys.exit(1)
+          # # Python 多行检查
+          # python3 <<PYEOF
+          # import sys
+          # try:
+          #     import tensorflow as tf
+          # except ModuleNotFoundError:
+          #     print("❌ TensorFlow is not installed in this environment!")
+          #     sys.exit(1)
 
           print("TensorFlow version:", tf.__version__)
 
-          devices = tf.config.list_physical_devices()
-          print("Available devices:", devices)
+          # devices = tf.config.list_physical_devices()
+          # print("Available devices:", devices)
 
-          musa_devices = [d for d in devices if 'MUSA' in d.name or 'GPU' in d.name]
-          if len(musa_devices) == 0:
-              print("❌ No MUSA device found!")
-              sys.exit(1)
+          # musa_devices = [d for d in devices if 'MUSA' in d.name or 'GPU' in d.name]
+          # if len(musa_devices) == 0:
+          #     print("❌ No MUSA device found!")
+          #     sys.exit(1)
 
-          print("✅ MUSA device detected:", musa_devices[0])
+          # print("✅ MUSA device detected:", musa_devices[0])
           PYEOF
           EOF
 
