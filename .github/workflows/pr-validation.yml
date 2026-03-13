@@ -57,16 +57,16 @@ jobs:
         continue-on-error: true
  
       # 6. 进入容器跑集成测试
-      # - name: Run integration tests (MUSA operators)
-      #   id: run-integration
-      #   if: steps.run-tests.outputs.status == 'success'
-      #   run: |
-      #     if docker exec Runner bash -c "cd /home/runner/pr_test_${{ github.run_id }} && python -m pytest tests/integration/ -v --tb=short"; then
-      #       echo "status=success" >> $GITHUB_OUTPUT
-      #     else
-      #       echo "status=failure" >> $GITHUB_OUTPUT
-      #     fi
-      #   continue-on-error: true
+      - name: Run integration tests (MUSA operators)
+        id: run-integration
+        if: steps.run-tests.outputs.status == 'success'
+        run: |
+          if docker exec Runner bash -c "cd /home/runner/pr_test_${{ github.run_id }} && python -m pytest tests/integration/ -v --tb=short"; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
 
       # 🌟 7. 收尾清理工作（非常重要！）
       # 因为容器不会销毁，为了防止把容器磁盘塞满，测试跑完后必须把这次拷贝进去的代码删掉
