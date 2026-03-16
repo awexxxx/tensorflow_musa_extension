@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -367,7 +368,7 @@ class MusaGraphOptimizer : public CustomGraphOptimizer {
 
     bool graph_modified = true;
     int iteration = 0;
-    const int kMaxIterations = 10;  // Prevent infinite loops
+    const int kMaxIterations = 15;
 
     while (graph_modified && iteration < kMaxIterations) {
       graph_modified = false;
