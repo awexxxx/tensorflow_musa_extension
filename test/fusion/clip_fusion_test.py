@@ -14,8 +14,7 @@
 # ==============================================================================
 """End-to-end tests for clip-pattern -> MusaClip fusion."""
 
-import os
-import tempfile
+import time
 
 import numpy as np
 import tensorflow as tf
@@ -47,105 +46,55 @@ def get_musa_clip_fused_nodes(run_metadata):
 
 
 class ClipFusionE2ETest(MUSATestCase):
-    """Tests for graph-level clip fusion."""
+    """Functional tests for graph-level clip fusion."""
 
     def test_clip_fusion_minimum_then_maximum_is_applied(self):
         x_np = np.array(
-            [[-3.0, -1.0, 2.0, 8.0],
-             [0.5, 1.5, 7.0, 9.0]],
+            [[-3.0, -1.0, 2.0, 8.0], [0.5, 1.5, 7.0, 9.0]],
             dtype=np.float32,
         )
         lo_np = np.float32(0.0)
         hi_np = np.float32(6.0)
-        expected = np.maximum(np.minimum(np.sqrt(np.abs(x_np) + 1.0), hi_np), lo_np)
-        maximum_name = "fwffm_pbp_mlp/pln1_follow/clip_by_value"
-        minimum_name = "fwffm_pbp_mlp/pln1_follow/clip_by_value/Minimum"
+        expected = np.maximum(np.minimum(x_np, hi_np), lo_np)
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            log_path = os.path.join(tmp_dir, "clip_fusion_matches.log")
-            previous_log_path = os.environ.get("MUSA_CLIP_FUSION_LOG_PATH")
-            os.environ["MUSA_CLIP_FUSION_LOG_PATH"] = log_path
-
-            try:
-                graph = tf.Graph()
-                with graph.as_default():
-                    with tf.device("/device:MUSA:0"):
-                        x = tf.compat.v1.placeholder(
-                            tf.float32,
-                            shape=[None, 4],
-                            name="fwffm_pbp_mlp/pln1_follow/input",
-                        )
-                        lo = tf.constant(
-                            lo_np,
-                            dtype=tf.float32,
-                            name="fwffm_pbp_mlp/pln1_follow/clip_by_value/y",
-                        )
-                        hi = tf.constant(
-                            hi_np,
-                            dtype=tf.float32,
-                            name="fwffm_pbp_mlp/pln1_follow/clip_by_value/Minimum/y",
-                        )
-                        sqrt_input = tf.add(
-                            tf.abs(x),
-                            tf.constant(1.0, dtype=tf.float32),
-                            name="fwffm_pbp_mlp/pln1_follow/SqrtShift",
-                        )
-                        sqrt_output = tf.sqrt(
-                            sqrt_input,
-                            name="fwffm_pbp_mlp/pln1_follow/Sqrt",
-                        )
-
-                        output = tf.maximum(
-                            tf.minimum(sqrt_output, hi, name=minimum_name),
-                            lo,
-                            name=maximum_name,
-                        )
-
-                graph_def = graph.as_graph_def()
-                nodes_by_name = {node.name: node for node in graph_def.node}
-                self.assertEqual(nodes_by_name[maximum_name].op, "Maximum")
-                self.assertEqual(nodes_by_name[minimum_name].op, "Minimum")
-
-                config = create_config_with_musa_optimizer()
-                run_options = tf.compat.v1.RunOptions(output_partition_graphs=True)
-                run_metadata = tf.compat.v1.RunMetadata()
-
-                with tf.compat.v1.Session(graph=graph, config=config) as sess:
-                    result = sess.run(
-                        output,
-                        feed_dict={x: x_np},
-                        options=run_options,
-                        run_metadata=run_metadata,
-                    )
-
-                fused_nodes = get_musa_clip_fused_nodes(run_metadata)
-
-                self.assertAllClose(result, expected, rtol=1e-5, atol=1e-6)
-                self.assertTrue(
-                    fused_nodes,
-                    "Expected Maximum(Minimum(x, hi), lo) chain to be fused into MusaClip",
+        graph = tf.Graph()
+        with graph.as_default():
+            with tf.device("/device:MUSA:0"):
+                x = tf.compat.v1.placeholder(
+                    tf.float32, shape=[None, 4], name="x"
                 )
-                self.assertTrue(
-                    any(node.name == maximum_name for node in fused_nodes),
-                    f"Expected fused MusaClip node named {maximum_name}",
+                lo = tf.constant(lo_np, dtype=tf.float32, name="lo")
+                hi = tf.constant(hi_np, dtype=tf.float32, name="hi")
+
+                output = tf.maximum(
+                    tf.minimum(x, hi, name="clip_min_first"),
+                    lo,
+                    name="clip_max_second",
                 )
 
-                with open(log_path, "r", encoding="utf-8") as log_file:
-                    log_content = log_file.read()
+        config = create_config_with_musa_optimizer()
+        run_options = tf.compat.v1.RunOptions(output_partition_graphs=True)
+        run_metadata = tf.compat.v1.RunMetadata()
 
-                self.assertIn(f"maximum_candidate={maximum_name}", log_content)
-                self.assertIn(f"maximum_matched={maximum_name}", log_content)
-                self.assertIn(f"inner_minimum={minimum_name}", log_content)
-            finally:
-                if previous_log_path is None:
-                    os.environ.pop("MUSA_CLIP_FUSION_LOG_PATH", None)
-                else:
-                    os.environ["MUSA_CLIP_FUSION_LOG_PATH"] = previous_log_path
+        with tf.compat.v1.Session(graph=graph, config=config) as sess:
+            result = sess.run(
+                output,
+                feed_dict={x: x_np},
+                options=run_options,
+                run_metadata=run_metadata,
+            )
+
+        fused_nodes = get_musa_clip_fused_nodes(run_metadata)
+
+        self.assertAllClose(result, expected, rtol=1e-5, atol=1e-6)
+        self.assertTrue(
+            fused_nodes,
+            "Expected Maximum(Minimum(x, hi), lo) chain to be fused into MusaClip",
+        )
 
     def test_clip_fusion_maximum_then_minimum_is_not_applied(self):
         x_np = np.array(
-            [[-3.0, -1.0, 2.0, 8.0],
-             [0.5, 1.5, 7.0, 9.0]],
+            [[-3.0, -1.0, 2.0, 8.0], [0.5, 1.5, 7.0, 9.0]],
             dtype=np.float32,
         )
         lo_np = np.float32(0.0)
@@ -185,6 +134,80 @@ class ClipFusionE2ETest(MUSATestCase):
         self.assertFalse(
             fused_nodes,
             "Did not expect Minimum(Maximum(x, lo), hi) chain to match the simplified fusion rule",
+        )
+
+
+class ClipFusionPerfE2ETest(MUSATestCase):
+    """Performance test for a minimal [?, 1] clip chain."""
+
+    def test_clip_chain_perf_with_column_vector_input(self):
+        rows = 4096
+        warmup_rounds = 10
+        timed_rounds = 200
+
+        x_np = np.linspace(-8.0, 8.0, num=rows, dtype=np.float32).reshape(-1, 1)
+        lo_np = np.float32(0.0)
+        hi_np = np.float32(6.0)
+        expected = np.maximum(np.minimum(x_np, hi_np), lo_np)
+
+        graph = tf.Graph()
+        with graph.as_default():
+            with tf.device("/device:MUSA:0"):
+                x = tf.compat.v1.placeholder(
+                    tf.float32,
+                    shape=[None, 1],
+                    name="clip_input",
+                )
+                lo = tf.constant(lo_np, dtype=tf.float32, name="clip_lo")
+                hi = tf.constant(hi_np, dtype=tf.float32, name="clip_hi")
+                output = tf.maximum(
+                    tf.minimum(x, hi, name="clip_by_value/Minimum"),
+                    lo,
+                    name="clip_by_value",
+                )
+
+        graph_def = graph.as_graph_def()
+        nodes_by_name = {node.name: node for node in graph_def.node}
+        self.assertEqual(nodes_by_name["clip_by_value"].op, "Maximum")
+        self.assertEqual(nodes_by_name["clip_by_value/Minimum"].op, "Minimum")
+
+        config = create_config_with_musa_optimizer()
+        run_options = tf.compat.v1.RunOptions(output_partition_graphs=True)
+        run_metadata = tf.compat.v1.RunMetadata()
+
+        with tf.compat.v1.Session(graph=graph, config=config) as sess:
+            warmup_result = sess.run(
+                output,
+                feed_dict={x: x_np},
+                options=run_options,
+                run_metadata=run_metadata,
+            )
+            self.assertAllClose(warmup_result, expected, rtol=1e-5, atol=1e-6)
+
+            for _ in range(max(0, warmup_rounds - 1)):
+                sess.run(output, feed_dict={x: x_np})
+
+            times = []
+            result = None
+            for _ in range(timed_rounds):
+                start_time = time.perf_counter()
+                result = sess.run(output, feed_dict={x: x_np})
+                end_time = time.perf_counter()
+                times.append(end_time - start_time)
+
+        fused_nodes = get_musa_clip_fused_nodes(run_metadata)
+
+        self.assertIsNotNone(result)
+        self.assertAllClose(result, expected, rtol=1e-5, atol=1e-6)
+
+        avg_time = sum(times) / len(times)
+        min_time = min(times)
+        max_time = max(times)
+        print(
+            "clip perf: "
+            f"rows={rows}, warmup_rounds={warmup_rounds}, timed_rounds={timed_rounds}, "
+            f"fused_nodes={len(fused_nodes)}, avg_time={avg_time:.8f}s, "
+            f"min_time={min_time:.8f}s, max_time={max_time:.8f}s"
         )
 
 

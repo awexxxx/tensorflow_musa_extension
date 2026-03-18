@@ -34,7 +34,7 @@ class MusaClipFusion : public FusionPattern {
   Status Apply(GraphDef* graph,
                const FusionMatchResult& match_result) const override;
 
-  int GetPriority() const override { return 95; }
+  int GetPriority() const override { return 100; }
   bool IsKernelAvailable() const override;
   std::string GetName() const override { return "MusaClipFusion"; }
 

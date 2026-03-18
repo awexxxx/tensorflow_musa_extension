@@ -16,15 +16,9 @@ limitations under the License.
 #include "mu/graph_fusion/clip_fusion.h"
 
 #include <algorithm>
-#include <cstring>
-#include <cstdlib>
-#include <fstream>
 #include <set>
-#include <string>
 
 #include "tensorflow/core/framework/attr_value.pb.h"
-#include "tensorflow/core/platform/env.h"
-#include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -34,48 +28,6 @@ namespace {
 
 bool IsOp(const NodeDef& node, const std::string& op_type) {
   return node.op() == op_type;
-}
-
-std::string GetClipFusionLogPath() {
-  const char* env_path = std::getenv("MUSA_CLIP_FUSION_LOG_PATH");
-  if (env_path != nullptr && std::strlen(env_path) > 0) {
-    return std::string(env_path);
-  }
-
-  const char* dump_dir = std::getenv("MUSA_DUMP_GRAPHDEF_DIR");
-  if (dump_dir != nullptr && std::strlen(dump_dir) > 0) {
-    return std::string(dump_dir) + "/clip_fusion_matches.log";
-  }
-
-  return "./clip_fusion_matches.log";
-}
-
-void AppendClipFusionLogLine(const std::string& line) {
-  const std::string log_path = GetClipFusionLogPath();
-  const std::string::size_type slash_pos = log_path.find_last_of('/');
-  if (slash_pos != std::string::npos) {
-    const std::string dir = log_path.substr(0, slash_pos);
-    if (!dir.empty()) {
-      tensorflow::Env* env = tensorflow::Env::Default();
-      if (!env->FileExists(dir).ok()) {
-        Status create_status = env->RecursivelyCreateDir(dir);
-        if (!create_status.ok()) {
-          LOG(WARNING) << "MusaClipFusion: Failed to create log dir '" << dir
-                       << "': " << create_status;
-          return;
-        }
-      }
-    }
-  }
-
-  std::ofstream log_file(log_path, std::ios::out | std::ios::app);
-  if (!log_file.is_open()) {
-    LOG(WARNING) << "MusaClipFusion: Failed to open clip fusion log file: "
-                 << log_path;
-    return;
-  }
-
-  log_file << line << "\n";
 }
 
 const NodeDef* FindProducer(const GraphDef& graph, const std::string& input) {
@@ -133,11 +85,8 @@ FusionMatchResult MusaClipFusion::MatchFromMaximumNode(
   const NodeDef& maximum_node = graph.node(maximum_node_idx);
 
   if (!IsOp(maximum_node, "Maximum") || maximum_node.input_size() != 2) {
-    AppendClipFusionLogLine("not_candidate=" + maximum_node.name());
     return result;
   }
-
-  AppendClipFusionLogLine("maximum_candidate=" + maximum_node.name());
 
   int minimum_input_idx = -1;
   const NodeDef* minimum_node = FindProducer(graph, maximum_node.input(0));
@@ -151,12 +100,8 @@ FusionMatchResult MusaClipFusion::MatchFromMaximumNode(
   }
 
   if (minimum_input_idx < 0 || !minimum_node || minimum_node->input_size() != 2) {
-    //AppendClipFusionLogLine("maximum_unmatched=" + maximum_node.name());
     return result;
   }
-
-  //AppendClipFusionLogLine("maximum_matched=" + maximum_node.name());
-  //("inner_minimum=" + minimum_node->name());
 
   result.matched = true;
   result.matched_nodes = {&maximum_node, minimum_node};
@@ -199,9 +144,6 @@ Status MusaClipFusion::Apply(GraphDef* graph,
                   "Missing output/inner nodes for MusaClip fusion");
   }
 
-  // Cache everything we need before mutating the graph. GraphDef::add_node()
-  // may reallocate the underlying repeated field storage and invalidate the
-  // NodeDef* pointers captured during match.
   const std::string original_name = output_node->name();
   const std::string original_device = output_node->device();
   const std::string inner_node_name = inner_node->name();
@@ -215,8 +157,6 @@ Status MusaClipFusion::Apply(GraphDef* graph,
     output_type_attr = t_it->second;
     has_output_type = true;
   }
-
-  VLOG(1) << "MusaClipFusion: Creating fused node " << original_name;
 
   const_cast<NodeDef*>(output_node)->set_name(original_name + "_original");
   const std::string renamed_output_name = output_node->name();
