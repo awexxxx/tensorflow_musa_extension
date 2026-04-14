@@ -27,6 +27,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-global
+  cancel-in-progress: false
+
 defaults:
   run:
     shell: bash
@@ -52,6 +56,9 @@ jobs:
       run_kind: ${{ steps.collect.outputs.run_kind }}
       run_id: ${{ steps.collect.outputs.run_id }}
       log_root: ${{ steps.collect.outputs.log_root }}
+      host_name: ${{ steps.collect.outputs.host_name }}
+      host_ip: ${{ steps.collect.outputs.host_ip }}
+      host_sn: ${{ steps.collect.outputs.host_sn }}
       summary_file: ${{ steps.collect.outputs.summary_file }}
     steps:
       - name: Prepare metadata
@@ -83,6 +90,14 @@ jobs:
           LOG_ROOT="$LOG_BASE/$RUN_KIND/$RUN_ID"
           JOB_LOG_DIR="$LOG_ROOT/prepare-metadata"
           SUMMARY_FILE="$RUNNER_TEMP/prepare-metadata.md"
+          HOST_NAME="$(hostname)"
+          HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+          if [[ -z "$HOST_IP" ]]; then
+            HOST_IP="$(hostname -i 2>/dev/null || true)"
+          fi
+          HOST_IP="${HOST_IP:-unavailable}"
+          HOST_SN="$(cat /sys/class/dmi/id/product_serial 2>/dev/null || true)"
+          HOST_SN="${HOST_SN:-unavailable}"
 
           mkdir -p "$JOB_LOG_DIR"
 
@@ -95,7 +110,9 @@ jobs:
             echo "- Run kind: $RUN_KIND"
             echo "- Run id: $RUN_ID"
             echo "- Log root: $LOG_ROOT"
-            echo "- Runner: $(hostname)"
+            echo "- Runner: $HOST_NAME"
+            echo "- Host IP: $HOST_IP"
+            echo "- Host SN: $HOST_SN"
           } | tee "$SUMMARY_FILE"
 
           cat "$SUMMARY_FILE" >> "$GITHUB_STEP_SUMMARY"
@@ -106,6 +123,9 @@ jobs:
           echo "run_kind=$RUN_KIND" >> "$GITHUB_OUTPUT"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "log_root=$LOG_ROOT" >> "$GITHUB_OUTPUT"
+          echo "host_name=$HOST_NAME" >> "$GITHUB_OUTPUT"
+          echo "host_ip=$HOST_IP" >> "$GITHUB_OUTPUT"
+          echo "host_sn=$HOST_SN" >> "$GITHUB_OUTPUT"
           echo "summary_file=$SUMMARY_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Upload summary artifact
@@ -512,7 +532,7 @@ jobs:
         run: exit 1
 
   tencent_perf:
-    name: Tencent Performance
+    name: T Performance
     needs: [prepare_metadata, build_current, build_baseline]
     if: needs.build_current.result == 'success' && needs.build_baseline.result == 'success'
     runs-on: [self-hosted, musa-gpu]
@@ -537,7 +557,7 @@ jobs:
           name: ${{ env.BASELINE_PLUGIN_ARTIFACT }}
           path: ${{ runner.temp }}/baseline-plugin
 
-      - name: Run Tencent performance baseline/current
+      - name: Run T performance baseline/current
         id: run_perf
         run: |
           set +e
@@ -573,7 +593,7 @@ jobs:
           echo "baseline_exit=$baseline_exit" >> "$GITHUB_OUTPUT"
           echo "current_exit=$current_exit" >> "$GITHUB_OUTPUT"
 
-      - name: Collect Tencent performance summary
+      - name: Collect T performance summary
         id: collect
         if: always()
         run: |
@@ -605,7 +625,7 @@ jobs:
           fi
 
           {
-            echo "## Tencent Performance"
+            echo "## T Performance"
             echo
             echo "- Status: $STATUS"
             echo "- Baseline commit: ${{ needs.build_baseline.outputs.baseline_sha }}"
@@ -639,21 +659,21 @@ jobs:
           echo "threshold_ms=$THRESHOLD_MS" >> "$GITHUB_OUTPUT"
           echo "summary_file=$SUMMARY_FILE" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Tencent performance summary artifact
+      - name: Upload T performance summary artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: summary-tencent-perf
+          name: summary-t-perf
           path: ${{ steps.collect.outputs.summary_file }}
           if-no-files-found: error
           retention-days: 7
 
-      - name: Fail job if Tencent performance regressed
+      - name: Fail job if T performance regressed
         if: always() && steps.collect.outputs.status == 'failure'
         run: exit 1
 
   tencent_accuracy:
-    name: Tencent Accuracy
+    name: T Accuracy
     needs: [prepare_metadata, build_current]
     if: needs.build_current.result == 'success'
     runs-on: [self-hosted, musa-gpu]
@@ -669,7 +689,7 @@ jobs:
           name: ${{ env.CURRENT_PLUGIN_ARTIFACT }}
           path: ${{ runner.temp }}/current-plugin
 
-      - name: Run Tencent accuracy current only
+      - name: Run T accuracy current only
         id: run_acc
         run: |
           set +e
@@ -695,7 +715,7 @@ jobs:
 
           echo "current_exit=$current_exit" >> "$GITHUB_OUTPUT"
 
-      - name: Collect Tencent accuracy summary
+      - name: Collect T accuracy summary
         id: collect
         if: always()
         run: |
@@ -715,7 +735,7 @@ jobs:
           fi
 
           {
-            echo "## Tencent Accuracy"
+            echo "## T Accuracy"
             echo
             echo "- Status: $STATUS"
             echo "- Current: ${CURRENT_ACC:-unavailable}"
@@ -735,21 +755,21 @@ jobs:
           echo "current_acc=$CURRENT_ACC" >> "$GITHUB_OUTPUT"
           echo "summary_file=$SUMMARY_FILE" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Tencent accuracy summary artifact
+      - name: Upload T accuracy summary artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: summary-tencent-accuracy
+          name: summary-t-accuracy
           path: ${{ steps.collect.outputs.summary_file }}
           if-no-files-found: error
           retention-days: 7
 
-      - name: Fail job if Tencent accuracy failed
+      - name: Fail job if T accuracy failed
         if: always() && steps.collect.outputs.status == 'failure'
         run: exit 1
 
   bytedance_model1:
-    name: ByteDance Model 1
+    name: BD Model 1
     needs: [prepare_metadata, build_current, build_baseline]
     if: needs.build_current.result == 'success' && needs.build_baseline.result == 'success'
     runs-on: [self-hosted, musa-gpu]
@@ -1005,7 +1025,7 @@ jobs:
           fi
 
           {
-            echo "## ByteDance Model 1"
+            echo "## BD Model 1"
             echo
             echo "- Status: $STATUS"
             echo "- Baseline: ${BASELINE_MS:-n/a}"
@@ -1046,7 +1066,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: summary-bytedance-model1
+          name: summary-bd-model1
           path: ${{ steps.collect.outputs.summary_file }}
           if-no-files-found: error
           retention-days: 7
@@ -1056,7 +1076,7 @@ jobs:
         run: exit 1
 
   bytedance_model2:
-    name: ByteDance Model 2
+    name: BD Model 2
     needs: [prepare_metadata, build_current, build_baseline]
     if: needs.build_current.result == 'success' && needs.build_baseline.result == 'success'
     runs-on: [self-hosted, musa-gpu]
@@ -1313,7 +1333,7 @@ jobs:
           fi
 
           {
-            echo "## ByteDance Model 2"
+            echo "## BD Model 2"
             echo
             echo "- Status: $STATUS"
             echo "- Baseline: ${BASELINE_MS:-n/a}"
@@ -1354,7 +1374,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: summary-bytedance-model2
+          name: summary-bd-model2
           path: ${{ steps.collect.outputs.summary_file }}
           if-no-files-found: error
           retention-days: 7
@@ -1364,7 +1384,7 @@ jobs:
         run: exit 1
 
   bytedance_model3:
-    name: ByteDance Model 3
+    name: BD Model 3
     needs: [prepare_metadata, build_current, build_baseline]
     if: needs.build_current.result == 'success' && needs.build_baseline.result == 'success'
     runs-on: [self-hosted, musa-gpu]
@@ -1621,7 +1641,7 @@ jobs:
           fi
 
           {
-            echo "## ByteDance Model 3"
+            echo "## BD Model 3"
             echo
             echo "- Status: $STATUS"
             echo "- Baseline: ${BASELINE_MS:-n/a}"
@@ -1662,7 +1682,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: summary-bytedance-model3
+          name: summary-bd-model3
           path: ${{ steps.collect.outputs.summary_file }}
           if-no-files-found: error
           retention-days: 7
@@ -1773,8 +1793,6 @@ jobs:
     if: ${{ always() && !cancelled() }}
     runs-on: [self-hosted, musa-gpu]
     timeout-minutes: 10
-    env:
-      DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
     steps:
       - name: Download summary artifacts
         uses: actions/download-artifact@v4
@@ -1822,6 +1840,9 @@ jobs:
             echo "- Commit: ${{ needs.prepare_metadata.outputs.commit_id }}"
             echo "- Run kind: ${{ needs.prepare_metadata.outputs.run_kind }}"
             echo "- Run id: ${{ needs.prepare_metadata.outputs.run_id }}"
+            echo "- Host name: ${{ needs.prepare_metadata.outputs.host_name || 'unavailable' }}"
+            echo "- Host IP: ${{ needs.prepare_metadata.outputs.host_ip || 'unavailable' }}"
+            echo "- Host SN: ${{ needs.prepare_metadata.outputs.host_sn || 'unavailable' }}"
             echo "- Baseline commit: $BASELINE_SHA"
             echo
             echo "## Job Status"
@@ -1831,21 +1852,21 @@ jobs:
             echo "| Build Current | $BUILD_CURRENT_STATUS | yes |"
             echo "| Integration | $INTEGRATION_STATUS | yes |"
             echo "| Build Baseline | $BUILD_BASELINE_STATUS | yes |"
-            echo "| Tencent Performance | $TENCENT_PERF_STATUS | yes |"
-            echo "| Tencent Accuracy | $TENCENT_ACC_STATUS | yes |"
-            echo "| ByteDance Model 1 | $BYTE1_STATUS | yes |"
-            echo "| ByteDance Model 2 | $BYTE2_STATUS | yes |"
-            echo "| ByteDance Model 3 | $BYTE3_STATUS | yes |"
+            echo "| T Performance | $TENCENT_PERF_STATUS | yes |"
+            echo "| T Accuracy | $TENCENT_ACC_STATUS | yes |"
+            echo "| BD Model 1 | $BYTE1_STATUS | yes |"
+            echo "| BD Model 2 | $BYTE2_STATUS | yes |"
+            echo "| BD Model 3 | $BYTE3_STATUS | yes |"
             echo "| Training | $TRAINING_STATUS | no |"
             echo
             echo "## Performance Metrics"
-            echo "- Tencent Performance: baseline=${{ needs.tencent_perf.outputs.baseline_ms || 'n/a' }} ms, current=${{ needs.tencent_perf.outputs.current_ms || 'n/a' }} ms, threshold=${{ needs.tencent_perf.outputs.threshold_ms || 'n/a' }} ms"
-            echo "- ByteDance Model 1: ${{ needs.bytedance_model1.outputs.metrics_summary || 'n/a' }}"
-            echo "- ByteDance Model 2: ${{ needs.bytedance_model2.outputs.metrics_summary || 'n/a' }}"
-            echo "- ByteDance Model 3: ${{ needs.bytedance_model3.outputs.metrics_summary || 'n/a' }}"
+            echo "- T Performance: baseline=${{ needs.tencent_perf.outputs.baseline_ms || 'n/a' }} ms, current=${{ needs.tencent_perf.outputs.current_ms || 'n/a' }} ms, threshold=${{ needs.tencent_perf.outputs.threshold_ms || 'n/a' }} ms"
+            echo "- BD Model 1: ${{ needs.bytedance_model1.outputs.metrics_summary || 'n/a' }}"
+            echo "- BD Model 2: ${{ needs.bytedance_model2.outputs.metrics_summary || 'n/a' }}"
+            echo "- BD Model 3: ${{ needs.bytedance_model3.outputs.metrics_summary || 'n/a' }}"
             echo
             echo "## Accuracy Highlights"
-            echo "- Tencent Accuracy current: ${{ needs.tencent_accuracy.outputs.current_acc || 'n/a' }}"
+            echo "- T Accuracy current: ${{ needs.tencent_accuracy.outputs.current_acc || 'n/a' }}"
             echo
           } > "$SUMMARY_FILE"
 
@@ -1890,125 +1911,14 @@ jobs:
           echo "final_status=$FINAL_STATUS" >> "$GITHUB_OUTPUT"
           echo "summary_file=$SUMMARY_FILE" >> "$GITHUB_OUTPUT"
 
-      - name: Send DingTalk notification
+      - name: Upload final summary artifact
         if: always()
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${DINGTALK_WEBHOOK:-}" ]]; then
-            echo "DINGTALK_WEBHOOK is not configured, skip notification."
-            exit 0
-          fi
-
-          FINAL_STATUS="${{ steps.final_summary.outputs.final_status }}"
-          COMMIT_ID="${{ needs.prepare_metadata.outputs.commit_id }}"
-          SHORT_COMMIT="${COMMIT_ID:0:8}"
-          RUN_KIND="${{ needs.prepare_metadata.outputs.run_kind }}"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          REF_NAME="${{ github.ref_name }}"
-          REPOSITORY="${{ github.repository }}"
-          BASELINE_SHA="${{ needs.build_baseline.outputs.baseline_sha || 'unavailable' }}"
-          PR_NUMBER="${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}"
-          PR_URL="${{ github.event_name == 'pull_request' && github.event.pull_request.html_url || '' }}"
-          FORMAT_STATUS="${{ needs.format.outputs.status || 'skipped' }}"
-          BUILD_CURRENT_STATUS="${{ needs.build_current.outputs.status || 'skipped' }}"
-          INTEGRATION_STATUS="${{ needs.integration.outputs.status || 'skipped' }}"
-          BUILD_BASELINE_STATUS="${{ needs.build_baseline.outputs.status || 'skipped' }}"
-          TENCENT_PERF_STATUS="${{ needs.tencent_perf.outputs.status || 'skipped' }}"
-          TENCENT_ACC_STATUS="${{ needs.tencent_accuracy.outputs.status || 'skipped' }}"
-          BYTE1_STATUS="${{ needs.bytedance_model1.outputs.status || 'skipped' }}"
-          BYTE2_STATUS="${{ needs.bytedance_model2.outputs.status || 'skipped' }}"
-          BYTE3_STATUS="${{ needs.bytedance_model3.outputs.status || 'skipped' }}"
-          TRAINING_STATUS="${{ needs.training.outputs.status || 'skipped' }}"
-
-          if [[ "$FINAL_STATUS" == "success" ]]; then
-            STATUS_ICON="SUCCESS"
-            STATUS_TEXT="成功"
-          else
-            STATUS_ICON="FAILURE"
-            STATUS_TEXT="失败"
-          fi
-
-          if [[ -n "$PR_NUMBER" ]]; then
-            PR_LINE="- PR: #${PR_NUMBER} ${PR_URL}"
-          else
-            PR_LINE="- PR: n/a"
-          fi
-
-          export STATUS_ICON STATUS_TEXT REPOSITORY REF_NAME RUN_KIND SHORT_COMMIT RUN_URL PR_LINE
-          export BASELINE_SHA FORMAT_STATUS BUILD_CURRENT_STATUS INTEGRATION_STATUS BUILD_BASELINE_STATUS
-          export TENCENT_PERF_STATUS TENCENT_ACC_STATUS BYTE1_STATUS BYTE2_STATUS BYTE3_STATUS TRAINING_STATUS
-
-          PAYLOAD="$(python3 - <<'PY'
-          import json
-          import os
-
-          status_icon = os.environ["STATUS_ICON"]
-          status_text = os.environ["STATUS_TEXT"]
-          repo = os.environ["REPOSITORY"]
-          ref_name = os.environ["REF_NAME"]
-          run_kind = os.environ["RUN_KIND"]
-          short_commit = os.environ["SHORT_COMMIT"]
-          run_url = os.environ["RUN_URL"]
-          pr_line = os.environ["PR_LINE"]
-          baseline_sha = os.environ["BASELINE_SHA"]
-          format_status = os.environ["FORMAT_STATUS"]
-          build_current_status = os.environ["BUILD_CURRENT_STATUS"]
-          integration_status = os.environ["INTEGRATION_STATUS"]
-          build_baseline_status = os.environ["BUILD_BASELINE_STATUS"]
-          tencent_perf_status = os.environ["TENCENT_PERF_STATUS"]
-          tencent_acc_status = os.environ["TENCENT_ACC_STATUS"]
-          byte1_status = os.environ["BYTE1_STATUS"]
-          byte2_status = os.environ["BYTE2_STATUS"]
-          byte3_status = os.environ["BYTE3_STATUS"]
-          training_status = os.environ["TRAINING_STATUS"]
-
-          title = f"CI {status_icon}: {repo}@{ref_name}"
-          text = "\n".join(
-              [
-                  f"### CI通知: {status_text}",
-                  f"- 仓库: {repo}",
-                  f"- 分支: {ref_name}",
-                  f"- Commit: `{short_commit}`",
-                  f"- 触发方式: {run_kind}",
-                  pr_line,
-                  f"- Baseline commit: `{baseline_sha}`",
-                  f"- 运行详情: [GitHub Actions]({run_url})",
-                  "",
-                  "#### Job 状态",
-                  f"- Format: {format_status}",
-                  f"- Build Current: {build_current_status}",
-                  f"- Integration: {integration_status}",
-                  f"- Build Baseline: {build_baseline_status}",
-                  f"- Tencent Performance: {tencent_perf_status}",
-                  f"- Tencent Accuracy: {tencent_acc_status}",
-                  f"- ByteDance Model 1: {byte1_status}",
-                  f"- ByteDance Model 2: {byte2_status}",
-                  f"- ByteDance Model 3: {byte3_status}",
-                  f"- Training: {training_status}",
-              ]
-          )
-
-          print(
-              json.dumps(
-                  {
-                      "msgtype": "markdown",
-                      "markdown": {
-                          "title": title,
-                          "text": text,
-                      },
-                  },
-                  ensure_ascii=False,
-              )
-          )
-          PY
-          )"
-
-          curl -fsSL \
-            -H 'Content-Type: application/json' \
-            -d "$PAYLOAD" \
-            "$DINGTALK_WEBHOOK"
+        uses: actions/upload-artifact@v4
+        with:
+          name: summary-final
+          path: ${{ steps.final_summary.outputs.summary_file }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Fail job if blocking checks failed
         if: always() && steps.final_summary.outputs.final_status == 'failure'
