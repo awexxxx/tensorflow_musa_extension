@@ -136,14 +136,21 @@ class ConcatMatMulFusionTest(MUSATestCase):
         # Check for MusaConcatMatMul node in partitioned graphs
         has_fused_node = False
         fused_node_name = ""
+        has_original_concat = False
+        has_original_matmul = False
         for partition_graph in run_metadata.partition_graphs:
             for node in partition_graph.node:
                 if "MusaConcatMatMul" in node.op:
                     has_fused_node = True
                     fused_node_name = node.name
-                    break
+                if node.name == "concat" and node.op == "ConcatV2":
+                    has_original_concat = True
+                if node.name == "matmul_original" and node.op == "MatMul":
+                    has_original_matmul = True
 
         self.assertTrue(has_fused_node, "MusaConcatMatMul fusion was NOT applied to the graph")
+        self.assertFalse(has_original_concat, "Original ConcatV2 node was not removed after fusion")
+        self.assertFalse(has_original_matmul, "Original MatMul node was not removed after fusion")
         print(f"Verified: Found fused node '{fused_node_name}' with op 'MusaConcatMatMul'")
 
 if __name__ == "__main__":

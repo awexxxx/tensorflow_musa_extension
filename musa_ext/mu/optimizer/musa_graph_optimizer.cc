@@ -400,23 +400,23 @@ class MusaGraphOptimizer : public CustomGraphOptimizer {
 
     // Step 1: Layout optimization (NHWC -> NCHW)
     if (configs_.layout_optimizer != TriState::kOff) {
-      dumper.DumpBeforePass(*optimized_graph, "layout");
+      // dumper.DumpBeforePass(*optimized_graph, "layout");
       OptimizeLayout(optimized_graph);
-      dumper.DumpAfterPass(*optimized_graph, "layout");
+      // dumper.DumpAfterPass(*optimized_graph, "layout");
     }
 
     // Step 2: AMP optimization (FP32 -> FP16)
     if (configs_.auto_mixed_precision != TriState::kOff) {
-      dumper.DumpBeforePass(*optimized_graph, "amp");
+      // dumper.DumpBeforePass(*optimized_graph, "amp");
       OptimizeAMP(optimized_graph);
-      dumper.DumpAfterPass(*optimized_graph, "amp");
+      // dumper.DumpAfterPass(*optimized_graph, "amp");
     }
 
     // Step 3: Fusion optimization (LayerNorm, GELU, etc.)
     if (configs_.remapping != TriState::kOff) {
-      dumper.DumpBeforePass(*optimized_graph, "fusion");
+      // dumper.DumpBeforePass(*optimized_graph, "fusion");
       TF_RETURN_IF_ERROR(OptimizeFusion(optimized_graph));
-      dumper.DumpAfterPass(*optimized_graph, "fusion");
+      // dumper.DumpAfterPass(*optimized_graph, "fusion");
     }
 
     if (configs_.optimizer_remove_ios_node != TriState::kOff) {
