@@ -22,6 +22,7 @@ limitations under the License.
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -29,6 +30,7 @@ limitations under the License.
 #include "google/protobuf/io/zero_copy_stream_impl.h"
 #include "google/protobuf/message.h"
 #include "google/protobuf/text_format.h"
+#include "mu/runtime_config_c_api.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/env.h"
@@ -62,6 +64,24 @@ struct SlimGraphStats {
   int consts_truncated = 0;
 };
 
+struct GraphDumpRuntimeConfig {
+  bool has_override = false;
+  bool enabled = false;
+  bool dump_text = false;
+  bool dump_slim = false;
+  std::string dump_dir = ".";
+};
+
+std::mutex& GraphDumpConfigMutex() {
+  static std::mutex* mutex = new std::mutex;
+  return *mutex;
+}
+
+GraphDumpRuntimeConfig& MutableGraphDumpConfig() {
+  static GraphDumpRuntimeConfig* config = new GraphDumpRuntimeConfig;
+  return *config;
+}
+
 bool EnvFlagEnabled(const char* env_name) {
   const char* env_val = std::getenv(env_name);
   return env_val != nullptr &&
@@ -71,6 +91,14 @@ bool EnvFlagEnabled(const char* env_name) {
 
 // Get dump directory from environment or use default
 std::string GetDumpDirectory() {
+  {
+    std::lock_guard<std::mutex> lock(GraphDumpConfigMutex());
+    const GraphDumpRuntimeConfig& config = MutableGraphDumpConfig();
+    if (config.has_override) {
+      return config.dump_dir.empty() ? "." : config.dump_dir;
+    }
+  }
+
   const char* env_dir = std::getenv("MUSA_DUMP_GRAPHDEF_DIR");
   if (env_dir != nullptr && std::strlen(env_dir) > 0) {
     return std::string(env_dir);
@@ -79,7 +107,27 @@ std::string GetDumpDirectory() {
   return ".";
 }
 
-bool IsSlimGraphDefDumpEnabled() { return EnvFlagEnabled(kSlimDumpEnv); }
+bool IsSlimGraphDefDumpEnabled() {
+  {
+    std::lock_guard<std::mutex> lock(GraphDumpConfigMutex());
+    const GraphDumpRuntimeConfig& config = MutableGraphDumpConfig();
+    if (config.has_override) {
+      return config.dump_slim;
+    }
+  }
+  return EnvFlagEnabled(kSlimDumpEnv);
+}
+
+bool IsGraphDefTextDumpEnabled() {
+  {
+    std::lock_guard<std::mutex> lock(GraphDumpConfigMutex());
+    const GraphDumpRuntimeConfig& config = MutableGraphDumpConfig();
+    if (config.has_override) {
+      return config.dump_text;
+    }
+  }
+  return EnvFlagEnabled("MUSA_DUMP_GRAPHDEF_TEXT");
+}
 
 std::string BuildDumpBasePath(const std::string& dump_dir,
                               const std::string& prefix,
@@ -366,7 +414,16 @@ GraphDef CreateSlimGraphDef(const GraphDef& graph_def, SlimGraphStats* stats) {
 
 }  // namespace
 
-bool IsGraphDefDumpingEnabled() { return EnvFlagEnabled("MUSA_DUMP_GRAPHDEF"); }
+bool IsGraphDefDumpingEnabled() {
+  {
+    std::lock_guard<std::mutex> lock(GraphDumpConfigMutex());
+    const GraphDumpRuntimeConfig& config = MutableGraphDumpConfig();
+    if (config.has_override) {
+      return config.enabled;
+    }
+  }
+  return EnvFlagEnabled("MUSA_DUMP_GRAPHDEF");
+}
 
 Status DumpGraphDef(const GraphDef& graph_def, const std::string& prefix,
                     const std::string& stage_description) {
@@ -400,7 +457,7 @@ Status DumpGraphDef(const GraphDef& graph_def, const std::string& prefix,
   TF_RETURN_IF_ERROR(WriteGraphDefBinary(graph_def, pb_path));
   LOG(INFO) << "MusaGraphOptimizer: Dumped GraphDef (binary) to " << pb_path
             << " (nodes: " << graph_def.node_size() << ")";
-  
+
   bool SlimGraphStatus = IsSlimGraphDefDumpEnabled();
 
   if (SlimGraphStatus) {
@@ -431,11 +488,7 @@ Status DumpGraphDef(const GraphDef& graph_def, const std::string& prefix,
   // The file can be inspected but may not round-trip cleanly through
   // text_format.Parse() without allow_unknown_field=True.
   // -----------------------------------------------------------------------
-  const char* dump_text_env = std::getenv("MUSA_DUMP_GRAPHDEF_TEXT");
-  const bool dump_text = dump_text_env != nullptr &&
-                         (std::string(dump_text_env) == "1" ||
-                          std::string(dump_text_env) == "true");
-  if (dump_text) {
+  if (IsGraphDefTextDumpEnabled()) {
     const std::string pbtxt_path = base_path + ".pbtxt";
     Status text_status = WriteGraphDefPbtxt(graph_def, pbtxt_path);
     if (text_status.ok()) {
@@ -495,3 +548,46 @@ void GraphDefDumper::DumpFinal(const GraphDef& graph) {
 }  // namespace musa
 }  // namespace grappler
 }  // namespace tensorflow
+
+extern "C" {
+
+void __attribute__((visibility("default"))) TFMusaSetGraphDumpConfig(
+    int enabled, const char* dump_dir, int dump_text, int dump_slim) {
+  std::lock_guard<std::mutex> lock(
+      ::tensorflow::grappler::musa::GraphDumpConfigMutex());
+  auto& config = ::tensorflow::grappler::musa::MutableGraphDumpConfig();
+  config.has_override = true;
+  config.enabled = enabled != 0;
+  config.dump_text = dump_text != 0;
+  config.dump_slim = dump_slim != 0;
+  config.dump_dir =
+      (dump_dir != nullptr && dump_dir[0] != '\0') ? dump_dir : ".";
+}
+
+void __attribute__((visibility("default"))) TFMusaClearGraphDumpConfig() {
+  std::lock_guard<std::mutex> lock(
+      ::tensorflow::grappler::musa::GraphDumpConfigMutex());
+  ::tensorflow::grappler::musa::MutableGraphDumpConfig() =
+      ::tensorflow::grappler::musa::GraphDumpRuntimeConfig();
+}
+
+int __attribute__((visibility("default"))) TFMusaGraphDumpIsEnabled() {
+  return ::tensorflow::grappler::musa::IsGraphDefDumpingEnabled() ? 1 : 0;
+}
+
+const char* __attribute__((visibility("default")))
+TFMusaGetGraphDumpDirectory() {
+  static thread_local std::string dump_dir;
+  dump_dir = ::tensorflow::grappler::musa::GetDumpDirectory();
+  return dump_dir.c_str();
+}
+
+int __attribute__((visibility("default"))) TFMusaGraphDumpTextIsEnabled() {
+  return ::tensorflow::grappler::musa::IsGraphDefTextDumpEnabled() ? 1 : 0;
+}
+
+int __attribute__((visibility("default"))) TFMusaGraphDumpSlimIsEnabled() {
+  return ::tensorflow::grappler::musa::IsSlimGraphDefDumpEnabled() ? 1 : 0;
+}
+
+}

@@ -87,7 +87,7 @@ set(TF_COMPILE_FLAGS "${TF_COMPILE_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=0")
 # refcount aborts during session/resource destruction.
 #
 # Keep NDEBUG enabled in every build to match the TensorFlow wheel.
-set(TF_COMPILE_FLAGS "${TF_COMPILE_FLAGS} -DMUSA_DISABLE_DEBUG_LOGGING -DNDEBUG -DMUSA_DISABLE_TRACE_LOGGING -DMUSA_DISABLE_AUTO_TRACE")
+set(TF_COMPILE_FLAGS "${TF_COMPILE_FLAGS} -DMUSA_DISABLE_DEBUG_LOGGING -DNDEBUG -DMUSA_DISABLE_AUTO_TRACE")
 
 # Include paths
 include_directories("${TF_INC}" "${MUSA_PATH}/include")
