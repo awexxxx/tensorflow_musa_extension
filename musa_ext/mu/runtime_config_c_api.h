@@ -4,6 +4,19 @@
 extern "C" {
 
 void TFMusaSetAllowGrowth(int enabled);
+void TFMusaSetTelemetryConfig(int enabled, const char* log_path,
+                              unsigned long long buffer_size,
+                              int flush_interval_ms,
+                              int include_stack_trace);
+int TFMusaTelemetryIsEnabled();
+const char* TFMusaGetTelemetryHealthSnapshot();
+void TFMusaSetGraphDumpConfig(int enabled, const char* dump_dir,
+                              int dump_text, int dump_slim);
+void TFMusaClearGraphDumpConfig();
+int TFMusaGraphDumpIsEnabled();
+const char* TFMusaGetGraphDumpDirectory();
+int TFMusaGraphDumpTextIsEnabled();
+int TFMusaGraphDumpSlimIsEnabled();
 
 }  // extern "C"
 

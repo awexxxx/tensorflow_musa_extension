@@ -73,6 +73,27 @@ setting:
 export TF_FORCE_GPU_ALLOW_GROWTH=true
 ```
 
+Configure native MUSA telemetry from Python for debugging. The Python API
+overrides the `MUSA_TELEMETRY_*` environment variables:
+
+```python
+import tensorflow_musa as tf_musa
+
+tf_musa.set_musa_telemetry_config(
+    enabled=True,
+    log_path="/tmp/musa_telemetry.json",
+    buffer_size=50000,
+    flush_interval_ms=50,
+    include_stack_trace=True,
+)
+```
+
+Disable telemetry and flush pending events:
+
+```python
+tf_musa.disable_musa_telemetry()
+```
+
 Enable or disable the MUSA custom graph optimizer:
 
 ```python
@@ -84,6 +105,24 @@ tf_musa.set_musa_graph_optimizer_enabled(config, enabled=True)
 
 # To disable it:
 # tf_musa.set_musa_graph_optimizer_enabled(config, enabled=False)
+```
+
+Configure GraphDef dumps from Python when debugging Grappler passes. The Python
+API overrides the `MUSA_DUMP_GRAPHDEF*` environment variables:
+
+```python
+tf_musa.set_musa_graph_dump_config(
+    enabled=True,
+    dump_dir="/tmp/graphs",
+    dump_text=True,
+    dump_slim=True,
+)
+```
+
+Disable dumping:
+
+```python
+tf_musa.disable_musa_graph_dump()
 ```
 
 Disable selected fusion patterns from Python by passing parameters to the C++

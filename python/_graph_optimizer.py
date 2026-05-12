@@ -19,6 +19,16 @@ MUSA_GRAPH_OPTIMIZER_NAME = "musa_graph_optimizer"
 DISABLED_FUSION_PATTERNS_PARAM = "disabled_fusion_patterns"
 
 
+def _runtime_config_bindings():
+    from ._loader import load_plugin
+
+    load_plugin()
+
+    from . import _runtime_config_bindings as bindings
+
+    return bindings
+
+
 def _get_config_proto_class():
     import tensorflow as tf
 
@@ -260,3 +270,74 @@ def is_musa_graph_optimizer_enabled(config):
         custom_optimizer.name == MUSA_GRAPH_OPTIMIZER_NAME
         for custom_optimizer in rewrite_options.custom_optimizers
     )
+
+
+def set_musa_graph_dump_config(
+    enabled=True,
+    dump_dir=".",
+    dump_text=False,
+    dump_slim=False,
+):
+    """Configure MUSA Grappler GraphDef dumping.
+
+    This setting overrides the `MUSA_DUMP_GRAPHDEF`,
+    `MUSA_DUMP_GRAPHDEF_DIR`, `MUSA_DUMP_GRAPHDEF_TEXT`, and
+    `MUSA_DUMP_GRAPHDEF_SLIM` environment variables for the current process.
+
+    Args:
+        enabled: Whether MUSA graph dumping should be enabled.
+        dump_dir: Directory where GraphDef dump files are written.
+        dump_text: Also emit `.pbtxt` dumps for human inspection.
+        dump_slim: Also emit `.slim.pb` dumps with large metadata/payloads
+            trimmed for faster inspection.
+    """
+    _runtime_config_bindings().set_musa_graph_dump_config(
+        bool(enabled),
+        "." if dump_dir is None else str(dump_dir),
+        bool(dump_text),
+        bool(dump_slim),
+    )
+
+
+def enable_musa_graph_dump(
+    dump_dir=".",
+    dump_text=False,
+    dump_slim=False,
+):
+    """Enable MUSA Grappler GraphDef dumping."""
+    set_musa_graph_dump_config(
+        enabled=True,
+        dump_dir=dump_dir,
+        dump_text=dump_text,
+        dump_slim=dump_slim,
+    )
+
+
+def disable_musa_graph_dump():
+    """Disable MUSA Grappler GraphDef dumping."""
+    set_musa_graph_dump_config(enabled=False)
+
+
+def clear_musa_graph_dump_config():
+    """Clear Python GraphDef dump override and fall back to environment vars."""
+    _runtime_config_bindings().clear_musa_graph_dump_config()
+
+
+def is_musa_graph_dump_enabled():
+    """Return whether MUSA GraphDef dumping is currently enabled."""
+    return bool(_runtime_config_bindings().is_musa_graph_dump_enabled())
+
+
+def get_musa_graph_dump_directory():
+    """Return the current MUSA GraphDef dump directory."""
+    return _runtime_config_bindings().get_musa_graph_dump_directory()
+
+
+def is_musa_graph_dump_text_enabled():
+    """Return whether `.pbtxt` GraphDef dumps are currently enabled."""
+    return bool(_runtime_config_bindings().is_musa_graph_dump_text_enabled())
+
+
+def is_musa_graph_dump_slim_enabled():
+    """Return whether `.slim.pb` GraphDef dumps are currently enabled."""
+    return bool(_runtime_config_bindings().is_musa_graph_dump_slim_enabled())

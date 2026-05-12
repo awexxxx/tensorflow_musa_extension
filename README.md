@@ -72,6 +72,29 @@ tf_musa.set_musa_allow_growth(enabled=False)
 export TF_FORCE_GPU_ALLOW_GROWTH=true
 ```
 
+### MUSA 遥测调试
+
+测试代码可以通过 Python 接口控制 C++ 遥测系统。接口配置会覆盖
+`MUSA_TELEMETRY_*` 环境变量：
+
+```python
+import tensorflow_musa as tf_musa
+
+tf_musa.set_musa_telemetry_config(
+    enabled=True,
+    log_path="/tmp/musa_telemetry.json",
+    buffer_size=50000,
+    flush_interval_ms=50,
+    include_stack_trace=True,
+)
+```
+
+关闭并刷新未写出的事件：
+
+```python
+tf_musa.disable_musa_telemetry()
+```
+
 ### MUSA 自定义图优化器开关
 
 `tensorflow_musa` 提供了 `ConfigProto` 级别的接口，用于启用、关闭或查询 `musa_graph_optimizer`。常规推理场景推荐使用 `enable_musa_graph_optimizer(config)`，它等价于向 `config.graph_options.rewrite_options.custom_optimizers` 注册 `musa_graph_optimizer`。
@@ -97,6 +120,24 @@ tf_musa.disable_musa_graph_optimizer(config)
 ```python
 tf_musa.set_musa_graph_optimizer_enabled(config, enabled=True)
 tf_musa.set_musa_graph_optimizer_enabled(config, enabled=False)
+```
+
+图优化调试时，可以从 Python 打开 GraphDef dump。接口配置会覆盖
+`MUSA_DUMP_GRAPHDEF*` 环境变量：
+
+```python
+tf_musa.set_musa_graph_dump_config(
+    enabled=True,
+    dump_dir="/tmp/graphs",
+    dump_text=True,
+    dump_slim=True,
+)
+```
+
+关闭 dump：
+
+```python
+tf_musa.disable_musa_graph_dump()
 ```
 
 按名称关闭部分融合 pattern 时，可直接在 Python 配置里传参给 C++ 优化器：

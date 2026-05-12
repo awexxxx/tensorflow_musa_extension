@@ -33,16 +33,31 @@ from ._graph_optimizer import (
     DISABLED_FUSION_PATTERNS_PARAM,
     MUSA_GRAPH_OPTIMIZER_NAME,
     clear_musa_disabled_fusion_patterns,
+    clear_musa_graph_dump_config,
     disable_musa_graph_optimizer,
     disable_musa_fusion_patterns,
+    disable_musa_graph_dump,
     enable_musa_graph_optimizer,
+    enable_musa_graph_dump,
+    get_musa_graph_dump_directory,
     get_musa_disabled_fusion_patterns,
+    is_musa_graph_dump_enabled,
+    is_musa_graph_dump_slim_enabled,
+    is_musa_graph_dump_text_enabled,
     is_musa_graph_optimizer_enabled,
+    set_musa_graph_dump_config,
     set_musa_disabled_fusion_patterns,
     set_musa_graph_optimizer_enabled,
 )
 from ._loader import get_musa_devices, get_musa_ops, is_plugin_loaded, load_plugin
-from ._runtime_config import set_musa_allow_growth
+from ._runtime_config import (
+    disable_musa_telemetry,
+    enable_musa_telemetry,
+    get_musa_telemetry_health,
+    is_musa_telemetry_enabled,
+    set_musa_allow_growth,
+    set_musa_telemetry_config,
+)
 
 # Package version
 __version__ = "0.1.0"
@@ -77,5 +92,18 @@ __all__ = [
     "disable_musa_fusion_patterns",
     "clear_musa_disabled_fusion_patterns",
     "get_musa_disabled_fusion_patterns",
+    "set_musa_graph_dump_config",
+    "enable_musa_graph_dump",
+    "disable_musa_graph_dump",
+    "clear_musa_graph_dump_config",
+    "is_musa_graph_dump_enabled",
+    "get_musa_graph_dump_directory",
+    "is_musa_graph_dump_text_enabled",
+    "is_musa_graph_dump_slim_enabled",
     "set_musa_allow_growth",
+    "set_musa_telemetry_config",
+    "enable_musa_telemetry",
+    "disable_musa_telemetry",
+    "is_musa_telemetry_enabled",
+    "get_musa_telemetry_health",
 ]
